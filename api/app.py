@@ -42,7 +42,7 @@ def process_file_contents(file_info):
     if file_info['type'] != 'file':
         return None
     
-    valid_extentions = ['.md']
+    valid_extentions = ['.md', '.js', '.jsx', '.ts', '.tsx', '.py', '.txt', '.json', '.sql']
     
     if not any(file_info['name'].endswith(ext) for ext in valid_extentions):
         return None
@@ -125,8 +125,61 @@ def vectorize_repo(index):
         print(f"Error: {str(e)}")
 
 def chat_with_repo(index):
-    print("Chatting...")
+    print("\nEneter repository in format 'owner/repo':")
+    repo_url = input("> ")
 
+    if not repo_url or '/' not in repo_url:
+        print("Invalid repo format.")
+        return
+
+    while True:
+        print("\nEnter your question (or 'quit' to return to main menu)")
+        question = input("> ")
+        if question.lower() == 'quit':
+            break
+
+        try:
+            question_embedding = openai.Embedding.create(
+                input=question,
+                model="text-embedding-ada-002"
+            )
+
+            embedding = question_embedding['data'][0]['embedding']
+
+            query_response = index.query(
+                namespace=repo_url,
+                vector=embedding,
+                top_k=3,
+                include_metadata=True
+            )
+
+            if not query_response.get('matches'):
+                print("no relevant code found")
+                continue
+
+            context = "\n\n".join([
+                f"File: {match['metadata']['file_name']}\n```\n{match['metadata']['content']}"
+                for match in query_response['matches']
+            ])
+
+            chat_response = openai.ChatCompletion.create(
+                model='gpt-4o-mini',
+                messages=[
+                {"role": "system", "content": "You are a helpful assistant, Answer questions about the repository using the provided code context."},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
+                ]
+            )
+
+            print("Answer:")
+            print(chat_response['choices'][0]['message']['content'])
+
+            print("\nSources:")
+            for match in query_response['matches']:
+                print(f"- {match['metadata']['file_name']}")
+
+        except Exception as e:
+            print(f"Error: {str(e)}")
+        
 
 print("Initializing...")
 while True:
